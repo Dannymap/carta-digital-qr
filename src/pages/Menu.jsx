@@ -42,19 +42,7 @@ export default function Menu() {
   }, [table])
 
   const tableEnabled = tableData?.status === 'open' || tableData?.status === 'bill_requested'
-
-  // Pantalla de mesa cerrada
-  if (tableData === null || (tableData && tableData.status === 'closed')) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center px-6 text-center gap-4">
-        <div className="text-6xl">🔒</div>
-        <h1 className="text-xl font-bold text-gray-800">Mesa {table} no disponible</h1>
-        <p className="text-gray-500 text-sm max-w-xs">
-          Esta mesa no está habilitada para realizar pedidos. Por favor, avisa al personal para que la activen.
-        </p>
-      </div>
-    )
-  }
+  const tableClosed = tableData === null || tableData?.status === 'closed'
 
   // Cargando estado de mesa
   if (tableData === undefined) {
@@ -82,16 +70,18 @@ export default function Menu() {
             <span className="text-xs text-white/70">Mesa {table}</span>
 
             <button
-              onClick={() => setOrdersOpen(true)}
-              className="flex items-center gap-1.5 bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-full text-sm font-semibold transition-colors"
+              onClick={() => !tableClosed && setOrdersOpen(true)}
+              disabled={tableClosed}
+              className="flex items-center gap-1.5 bg-white/10 px-3 py-1.5 rounded-full text-sm font-semibold transition-colors disabled:opacity-40 enabled:hover:bg-white/20"
             >
               <Receipt size={15} />
               Mis pedidos
             </button>
 
             <button
-              onClick={() => setCartOpen(true)}
-              className="relative flex items-center gap-1.5 bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-full text-sm font-semibold transition-colors"
+              onClick={() => !tableClosed && setCartOpen(true)}
+              disabled={tableClosed}
+              className="relative flex items-center gap-1.5 bg-white/10 px-3 py-1.5 rounded-full text-sm font-semibold transition-colors disabled:opacity-40 enabled:hover:bg-white/20"
             >
               <ShoppingBag size={15} />
               Pedir
@@ -104,6 +94,13 @@ export default function Menu() {
           </div>
         </div>
       </header>
+
+      {/* Aviso mesa cerrada */}
+      {tableClosed && (
+        <div className="bg-gray-700 text-white text-center text-sm py-2.5 font-medium flex items-center justify-center gap-2">
+          🔒 Mesa no habilitada · Avisa al personal para activarla
+        </div>
+      )}
 
       {/* Aviso cuenta solicitada */}
       {tableData?.status === 'bill_requested' && (
@@ -168,8 +165,8 @@ export default function Menu() {
         <p>{RESTAURANT.vatNote} · {RESTAURANT.allergenNote}</p>
       </footer>
 
-      <CartDrawer open={cartOpen} onClose={() => setCartOpen(false)} table={table} />
-      <MyOrders open={ordersOpen} onClose={() => setOrdersOpen(false)} table={table} tableData={tableData} />
+      {!tableClosed && <CartDrawer open={cartOpen} onClose={() => setCartOpen(false)} table={table} />}
+      {!tableClosed && <MyOrders open={ordersOpen} onClose={() => setOrdersOpen(false)} table={table} tableData={tableData} />}
     </div>
   )
 }
