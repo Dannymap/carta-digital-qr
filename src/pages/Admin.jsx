@@ -43,6 +43,11 @@ export default function Admin() {
 
   // Orders
   const [orders, setOrders] = useState([])
+  const prevOrderCount = useRef(0)
+  const initialized = useRef(false)
+
+  // Product filter
+  const [filterCat, setFilterCat] = useState('all')
 
   useEffect(() => {
     loadProducts()
@@ -52,9 +57,35 @@ export default function Admin() {
   }, [])
 
   useEffect(() => {
-    const unsub = subscribeToPendingOrders(setOrders)
+    const unsub = subscribeToPendingOrders(newOrders => {
+      if (initialized.current && newOrders.length > prevOrderCount.current) {
+        playNotificationSound()
+      }
+      prevOrderCount.current = newOrders.length
+      initialized.current = true
+      setOrders(newOrders)
+    })
     return unsub
   }, [])
+
+  function playNotificationSound() {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)()
+      const notes = [523, 659, 784]
+      notes.forEach((freq, i) => {
+        const osc = ctx.createOscillator()
+        const gain = ctx.createGain()
+        osc.connect(gain)
+        gain.connect(ctx.destination)
+        osc.type = 'sine'
+        osc.frequency.value = freq
+        gain.gain.setValueAtTime(0.3, ctx.currentTime + i * 0.15)
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.15 + 0.3)
+        osc.start(ctx.currentTime + i * 0.15)
+        osc.stop(ctx.currentTime + i * 0.15 + 0.3)
+      })
+    } catch {}
+  }
 
   async function loadProducts() {
     setLoadingProds(true)
@@ -160,6 +191,27 @@ export default function Admin() {
               </button>
             </div>
 
+            {/* Filtro por categoría */}
+            <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-1 mb-4">
+              <button
+                onClick={() => setFilterCat('all')}
+                className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${filterCat === 'all' ? 'text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                style={filterCat === 'all' ? { backgroundColor: 'var(--color-primary)' } : {}}
+              >
+                Todas
+              </button>
+              {categories.map(c => (
+                <button
+                  key={c.id}
+                  onClick={() => setFilterCat(c.id)}
+                  className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${filterCat === c.id ? 'text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                  style={filterCat === c.id ? { backgroundColor: 'var(--color-primary)' } : {}}
+                >
+                  {c.icon} {c.label}
+                </button>
+              ))}
+            </div>
+
             {loadingProds ? (
               <div className="text-center py-10 text-gray-400">Cargando...</div>
             ) : (
@@ -175,28 +227,35 @@ export default function Admin() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
-                    {products.map(p => (
-                      <tr key={p.id} className="hover:bg-gray-50">
-                        <td className="px-4 py-3">
-                          <div className="font-medium text-gray-900">{p.name}</div>
-                          {p.description && <div className="text-xs text-gray-400 truncate max-w-xs">{p.description}</div>}
-                        </td>
-                        <td className="px-4 py-3 text-gray-500">{p.category}</td>
-                        <td className="px-4 py-3 text-right font-semibold" style={{ color: 'var(--color-primary)' }}>
-                          {p.price?.toFixed(2)} {RESTAURANT.currency}
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          <span className={`inline-block w-2 h-2 rounded-full ${p.active ? 'bg-green-400' : 'bg-gray-300'}`} />
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="flex gap-2 justify-end">
-                            <button onClick={() => openEdit(p)} className="text-gray-400 hover:text-blue-500"><Pencil size={15} /></button>
-                            <button onClick={() => handleDelete(p.id)} className="text-gray-400 hover:text-red-500"><Trash2 size={15} /></button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                    {products.length === 0 && (
+                    {products
+                      .filter(p => filterCat === 'all' || p.category === filterCat)
+                      .map(p => {
+                        const cat = categories.find(c => c.id === p.category)
+                        return (
+                          <tr key={p.id} className="hover:bg-gray-50">
+                            <td className="px-4 py-3">
+                              <div className="font-medium text-gray-900">{p.name}</div>
+                              {p.description && <div className="text-xs text-gray-400 truncate max-w-xs">{p.description}</div>}
+                            </td>
+                            <td className="px-4 py-3 text-gray-500">
+                              {cat ? `${cat.icon} ${cat.label}` : <span className="text-gray-300 italic">Sin categoría</span>}
+                            </td>
+                            <td className="px-4 py-3 text-right font-semibold" style={{ color: 'var(--color-primary)' }}>
+                              {p.price?.toFixed(2)} {RESTAURANT.currency}
+                            </td>
+                            <td className="px-4 py-3 text-center">
+                              <span className={`inline-block w-2 h-2 rounded-full ${p.active ? 'bg-green-400' : 'bg-gray-300'}`} />
+                            </td>
+                            <td className="px-4 py-3">
+                              <div className="flex gap-2 justify-end">
+                                <button onClick={() => openEdit(p)} className="text-gray-400 hover:text-blue-500"><Pencil size={15} /></button>
+                                <button onClick={() => handleDelete(p.id)} className="text-gray-400 hover:text-red-500"><Trash2 size={15} /></button>
+                              </div>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    {products.filter(p => filterCat === 'all' || p.category === filterCat).length === 0 && (
                       <tr><td colSpan={5} className="text-center py-10 text-gray-400">Sin productos. Añade el primero.</td></tr>
                     )}
                   </tbody>
