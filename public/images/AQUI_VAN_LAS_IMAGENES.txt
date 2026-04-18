@@ -1,0 +1,11 @@
+Coloca aquí las imágenes de los productos.
+
+Para referenciarlas en el panel admin usa la ruta:
+  /images/nombre-del-archivo.jpg
+
+Ejemplos:
+  /images/margarita.jpg
+  /images/ensalada-cesar.png
+  /images/agua-mineral.jpg
+
+Formatos soportados: JPG, PNG, WEBP, SVG
