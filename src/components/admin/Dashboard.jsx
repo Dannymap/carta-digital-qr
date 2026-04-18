@@ -11,10 +11,15 @@ function startOfWeek() {
   d.setDate(d.getDate() - d.getDay()); return d.getTime()
 }
 
-const HOURS = Array.from({ length: 24 }, (_, i) => i)
+const PERIODS = [
+  { id: 'today', label: 'Hoy' },
+  { id: 'week',  label: 'Esta semana' },
+  { id: 'all',   label: 'Total' },
+]
 
 export function Dashboard({ tables }) {
   const [orders, setOrders] = useState([])
+  const [period, setPeriod] = useState('today')
 
   useEffect(() => {
     return subscribeToAllOrders(setOrders)
@@ -23,29 +28,35 @@ export function Dashboard({ tables }) {
   const today     = startOfDay()
   const weekStart = startOfWeek()
 
-  const todayOrders = orders.filter(o => o.createdAt >= today)
-  const weekOrders  = orders.filter(o => o.createdAt >= weekStart)
+  const filteredOrders = period === 'today'
+    ? orders.filter(o => o.createdAt >= today)
+    : period === 'week'
+    ? orders.filter(o => o.createdAt >= weekStart)
+    : orders
 
-  const revenueToday  = todayOrders.reduce((s, o) => s + (o.total ?? 0), 0)
-  const revenueWeek   = weekOrders.reduce((s, o) => s + (o.total ?? 0), 0)
-  const avgTicket     = todayOrders.length ? revenueToday / todayOrders.length : 0
+  const revenue   = filteredOrders.reduce((s, o) => s + (o.total ?? 0), 0)
+  const avgTicket = filteredOrders.length ? revenue / filteredOrders.length : 0
 
-  // Pedidos pendientes ahora mismo
-  const pendingNow = orders.filter(o => o.status === 'pending').length
+  // Para el subtítulo de ingresos siempre mostramos semana y total
+  const revenueWeek  = orders.filter(o => o.createdAt >= weekStart).reduce((s, o) => s + (o.total ?? 0), 0)
+  const revenueAll   = orders.reduce((s, o) => s + (o.total ?? 0), 0)
+
+  // Pedidos pendientes ahora mismo (siempre en tiempo real, sin filtro de período)
+  const pendingNow   = orders.filter(o => o.status === 'pending').length
   const preparingNow = orders.filter(o => o.status === 'preparing').length
 
-  // Top productos hoy
+  // Top productos en el período seleccionado
   const productCount = {}
-  todayOrders.forEach(o => o.items?.forEach(item => {
+  filteredOrders.forEach(o => o.items?.forEach(item => {
     productCount[item.name] = (productCount[item.name] ?? 0) + item.qty
   }))
   const topProducts = Object.entries(productCount)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 5)
 
-  // Ingresos por hora hoy
+  // Ingresos por hora del período
   const revenueByHour = {}
-  todayOrders.forEach(o => {
+  filteredOrders.forEach(o => {
     const h = new Date(o.createdAt).getHours()
     revenueByHour[h] = (revenueByHour[h] ?? 0) + (o.total ?? 0)
   })
@@ -53,25 +64,45 @@ export function Dashboard({ tables }) {
   const maxHourRevenue = Math.max(...Object.values(revenueByHour), 1)
 
   // Estado de mesas
-  const openTables     = Object.values(tables).filter(t => t.status === 'open').length
-  const billReqTables  = Object.values(tables).filter(t => t.status === 'bill_requested').length
+  const openTables    = Object.values(tables).filter(t => t.status === 'open').length
+  const billReqTables = Object.values(tables).filter(t => t.status === 'bill_requested').length
+
+  const periodLabel = PERIODS.find(p => p.id === period)?.label ?? ''
 
   return (
     <div className="space-y-6">
-      <h2 className="text-lg font-bold text-gray-800">Dashboard</h2>
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-bold text-gray-800">Dashboard</h2>
+        {/* Selector de período */}
+        <div className="flex bg-gray-100 rounded-lg p-1 gap-1">
+          {PERIODS.map(p => (
+            <button
+              key={p.id}
+              onClick={() => setPeriod(p.id)}
+              className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
+                period === p.id ? 'bg-white shadow text-gray-800' : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+      </div>
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <KpiCard
           icon={TrendingUp} color="bg-green-500"
-          label="Ingresos hoy"
-          value={`${revenueToday.toFixed(2)} ${RESTAURANT.currency}`}
-          sub={`Esta semana: ${revenueWeek.toFixed(2)} ${RESTAURANT.currency}`}
+          label={`Ingresos · ${periodLabel}`}
+          value={`${revenue.toFixed(2)} ${RESTAURANT.currency}`}
+          sub={period === 'today'
+            ? `Semana: ${revenueWeek.toFixed(2)} ${RESTAURANT.currency}`
+            : `Total acumulado: ${revenueAll.toFixed(2)} ${RESTAURANT.currency}`}
         />
         <KpiCard
           icon={ShoppingBag} color="bg-blue-500"
-          label="Pedidos hoy"
-          value={todayOrders.length}
+          label={`Pedidos · ${periodLabel}`}
+          value={filteredOrders.length}
           sub={`Ticket medio: ${avgTicket.toFixed(2)} ${RESTAURANT.currency}`}
         />
         <KpiCard
@@ -93,9 +124,9 @@ export function Dashboard({ tables }) {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Ingresos por hora */}
         <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
-          <h3 className="font-semibold text-gray-800 mb-4">Ingresos por hora (hoy)</h3>
+          <h3 className="font-semibold text-gray-800 mb-4">Ingresos por hora · {periodLabel}</h3>
           {activeHours.length === 0 ? (
-            <div className="text-center py-8 text-gray-400 text-sm">Sin pedidos hoy</div>
+            <div className="text-center py-8 text-gray-400 text-sm">Sin pedidos en este período</div>
           ) : (
             <div className="space-y-2">
               {activeHours.map(h => (
@@ -125,9 +156,9 @@ export function Dashboard({ tables }) {
 
         {/* Top productos */}
         <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
-          <h3 className="font-semibold text-gray-800 mb-4">Productos más pedidos (hoy)</h3>
+          <h3 className="font-semibold text-gray-800 mb-4">Productos más pedidos · {periodLabel}</h3>
           {topProducts.length === 0 ? (
-            <div className="text-center py-8 text-gray-400 text-sm">Sin datos hoy</div>
+            <div className="text-center py-8 text-gray-400 text-sm">Sin datos en este período</div>
           ) : (
             <div className="space-y-3">
               {topProducts.map(([name, qty], i) => (
@@ -155,7 +186,7 @@ export function Dashboard({ tables }) {
                 .filter(o => o.status === 'pending' || o.status === 'preparing')
                 .sort((a,b) => a.createdAt - b.createdAt)
                 .map(o => {
-                  const isOld = Date.now() - o.createdAt > 15 * 60 * 1000 // >15 min
+                  const isOld = Date.now() - o.createdAt > 15 * 60 * 1000
                   return (
                     <div key={o.id} className={`flex items-center gap-3 p-2.5 rounded-lg ${isOld ? 'bg-red-50 border border-red-100' : 'bg-gray-50'}`}>
                       {o.status === 'pending'
