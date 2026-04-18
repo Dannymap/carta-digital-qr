@@ -1,17 +1,24 @@
+import { storage } from '../config/firebase'
+import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage'
+
 export async function uploadImage(file, onProgress) {
-  onProgress?.(10)
-  const formData = new FormData()
-  formData.append('file', file)
+  const ext = file.name.split('.').pop()
+  const filename = `images/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
+  const storageRef = ref(storage, filename)
 
-  const res = await fetch('/api/upload', { method: 'POST', body: formData })
-  onProgress?.(90)
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    throw new Error(err.error ?? 'Error al subir la imagen')
-  }
-
-  const { url } = await res.json()
-  onProgress?.(100)
-  return url
+  return new Promise((resolve, reject) => {
+    const task = uploadBytesResumable(storageRef, file)
+    task.on(
+      'state_changed',
+      snap => {
+        const pct = Math.round((snap.bytesTransferred / snap.totalBytes) * 100)
+        onProgress?.(pct)
+      },
+      reject,
+      async () => {
+        const url = await getDownloadURL(task.snapshot.ref)
+        resolve(url)
+      }
+    )
+  })
 }
