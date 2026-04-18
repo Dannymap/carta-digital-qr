@@ -594,6 +594,7 @@ function TablesTab({ tables, categories, allProducts, onOpen, onClose }) {
   const [tableOrders, setTableOrders] = useState([])
   const [showAddOrder, setShowAddOrder] = useState(false)
   const [creating, setCreating] = useState(false)
+  const [expandedOrders, setExpandedOrders] = useState({})
 
   useEffect(() => {
     if (!selectedTable) return
@@ -727,30 +728,56 @@ function TablesTab({ tables, categories, allProducts, onOpen, onClose }) {
               </div>
             )}
 
-            {/* Pedidos de la mesa */}
+            {/* Pedidos de la mesa — colapsables */}
             {tableOrders.length === 0 ? (
               <div className="text-center py-10 text-gray-400 text-sm bg-white rounded-xl border border-gray-100">Sin pedidos en esta sesión</div>
             ) : (
-              <div className="space-y-3 max-h-[420px] overflow-y-auto pr-1">
-                {tableOrders.map(order => {
-                  const st = { pending: { icon: Clock, color: 'text-yellow-500' }, preparing: { icon: ChefHat, color: 'text-blue-500' }, delivered: { icon: CheckCircle, color: 'text-green-500' } }[order.status] ?? { icon: Clock, color: 'text-gray-400' }
+              <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1">
+                {tableOrders.map((order, idx) => {
+                  const st = {
+                    pending:   { icon: Clock,        color: 'text-yellow-500', label: 'Pendiente',  bg: 'bg-yellow-50 border-yellow-100' },
+                    preparing: { icon: ChefHat,      color: 'text-blue-500',   label: 'Preparando', bg: 'bg-blue-50 border-blue-100' },
+                    delivered: { icon: CheckCircle,  color: 'text-green-500',  label: 'Entregado',  bg: 'bg-green-50 border-green-100' },
+                  }[order.status] ?? { icon: Clock, color: 'text-gray-400', label: order.status, bg: 'bg-gray-50 border-gray-100' }
                   const Icon = st.icon
+                  const expanded = expandedOrders[order.id]
+                  const toggle = () => setExpandedOrders(prev => ({ ...prev, [order.id]: !prev[order.id] }))
+
                   return (
-                    <div key={order.id} className="bg-white rounded-xl border border-gray-100 p-3">
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-1.5 text-xs text-gray-400">
-                          <Icon size={13} className={st.color} />
-                          <span className="capitalize">{order.status}</span>
-                          {order.createdBy === 'admin' && <span className="bg-purple-100 text-purple-600 px-1.5 rounded-full">Admin</span>}
+                    <div key={order.id} className={`rounded-xl border ${st.bg} overflow-hidden`}>
+                      {/* Cabecera — siempre visible */}
+                      <button onClick={toggle} className="w-full flex items-center gap-2 px-3 py-2.5 text-left hover:brightness-95 transition-all">
+                        <Icon size={14} className={st.color} />
+                        <span className="text-xs font-semibold text-gray-700 flex-1">
+                          Pedido #{idx + 1}
+                          {order.createdBy === 'admin' && <span className="ml-1.5 bg-purple-100 text-purple-600 px-1.5 py-0.5 rounded-full text-[10px]">Admin</span>}
+                        </span>
+                        <span className="text-xs text-gray-400">{new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                        <span className="text-xs font-bold" style={{ color: 'var(--color-primary)' }}>{order.total?.toFixed(2)} {RESTAURANT.currency}</span>
+                        <svg className={`w-3.5 h-3.5 text-gray-400 transition-transform ${expanded ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                      </button>
+
+                      {/* Detalle — expandible */}
+                      {expanded && (
+                        <div className="px-3 pb-3 border-t border-white/60">
+                          <ul className="text-xs text-gray-600 space-y-0.5 mt-2">
+                            {order.items?.map((item, i) => (
+                              <li key={i} className="flex justify-between">
+                                <span>{item.qty}× {item.name}</span>
+                                <span>{(item.price * item.qty).toFixed(2)} {RESTAURANT.currency}</span>
+                              </li>
+                            ))}
+                          </ul>
+                          {order.status !== 'delivered' && (
+                            <div className="flex gap-1.5 mt-2 pt-2 border-t border-white/60">
+                              {order.status === 'pending' && (
+                                <button onClick={() => updateOrderStatus(order.id, 'preparing')} className="text-xs px-2 py-1 bg-blue-100 text-blue-600 rounded font-medium">Preparando</button>
+                              )}
+                              <button onClick={() => updateOrderStatus(order.id, 'delivered')} className="text-xs px-2 py-1 bg-green-100 text-green-600 rounded font-medium">Entregado</button>
+                            </div>
+                          )}
                         </div>
-                        <div className="flex gap-1">
-                          {order.status === 'pending' && <button onClick={() => updateOrderStatus(order.id, 'preparing')} className="text-xs px-2 py-1 bg-blue-100 text-blue-600 rounded font-medium">Preparando</button>}
-                          {order.status !== 'delivered' && <button onClick={() => updateOrderStatus(order.id, 'delivered')} className="text-xs px-2 py-1 bg-green-100 text-green-600 rounded font-medium">Entregado</button>}
-                        </div>
-                      </div>
-                      <ul className="text-xs text-gray-600 space-y-0.5">
-                        {order.items?.map((item, i) => <li key={i} className="flex justify-between"><span>{item.qty}× {item.name}</span><span>{(item.price * item.qty).toFixed(2)} {RESTAURANT.currency}</span></li>)}
-                      </ul>
+                      )}
                     </div>
                   )
                 })}
@@ -759,7 +786,7 @@ function TablesTab({ tables, categories, allProducts, onOpen, onClose }) {
 
             {tableOrders.length > 0 && (
               <div className="mt-3 flex justify-between font-bold text-sm pt-3 border-t">
-                <span>Total mesa</span>
+                <span>Total del día · Mesa {selectedTable}</span>
                 <span style={{ color: 'var(--color-primary)' }}>{tableTotal.toFixed(2)} {RESTAURANT.currency}</span>
               </div>
             )}
