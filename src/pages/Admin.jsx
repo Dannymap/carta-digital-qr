@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { LogOut, Plus, Pencil, Trash2, Package, QrCode, ClipboardList, X, Check, Upload, Link, LayoutGrid, UtensilsCrossed, Banknote, CreditCard, ChefHat, Clock, CheckCircle, LayoutDashboard } from 'lucide-react'
+import { LogOut, Plus, Pencil, Trash2, Package, QrCode, ClipboardList, X, Check, Upload, Link, LayoutGrid, UtensilsCrossed, Banknote, CreditCard, ChefHat, Clock, CheckCircle, LayoutDashboard, ExternalLink, Infinity } from 'lucide-react'
 import { Dashboard } from '../components/admin/Dashboard'
 import { uploadImage } from '../services/storage'
 import { auth } from '../config/firebase'
@@ -21,7 +21,7 @@ const TABS = [
   { id: 'qr',         label: 'QR Mesas',   icon: QrCode },
 ]
 
-const EMPTY_FORM = { name: '', description: '', price: '', category: '', image: '', active: true, order: 0 }
+const EMPTY_FORM = { name: '', description: '', price: '', category: '', image: '', active: true, order: 0, stock: '', modifiers: [] }
 
 export default function Admin() {
   const navigate = useNavigate()
@@ -103,14 +103,24 @@ export default function Admin() {
 
   function openEdit(product) {
     setEditing(product.id)
-    setForm({ ...EMPTY_FORM, ...product, price: product.price?.toString() ?? '' })
+    setForm({
+      ...EMPTY_FORM,
+      ...product,
+      price: product.price?.toString() ?? '',
+      stock: product.stock ?? '',
+      modifiers: product.modifiers ?? [],
+    })
     setShowForm(true)
   }
 
   async function handleSave() {
     if (!form.name || !form.category || form.price === '') return
     setSaving(true)
-    const data = { ...form, price: parseFloat(form.price) }
+    const data = {
+      ...form,
+      price: parseFloat(form.price),
+      stock: form.stock === '' || form.stock === null ? null : Number(form.stock),
+    }
     try {
       if (editing) {
         await updateProduct(editing, data)
@@ -144,9 +154,15 @@ export default function Admin() {
       <header className="text-white shadow" style={{ backgroundColor: 'var(--color-secondary)' }}>
         <div className="max-w-5xl mx-auto px-4 h-14 flex items-center justify-between">
           <span className="font-bold">{RESTAURANT.name} · Admin</span>
-          <button onClick={handleLogout} className="flex items-center gap-1.5 text-sm text-white/80 hover:text-white">
-            <LogOut size={16} /> Salir
-          </button>
+          <div className="flex items-center gap-3">
+            <a href="/cocina" target="_blank" rel="noopener noreferrer"
+              className="flex items-center gap-1.5 text-sm text-white/80 hover:text-white">
+              <ChefHat size={16} /> Cocina <ExternalLink size={12} />
+            </a>
+            <button onClick={handleLogout} className="flex items-center gap-1.5 text-sm text-white/80 hover:text-white">
+              <LogOut size={16} /> Salir
+            </button>
+          </div>
         </div>
       </header>
 
@@ -222,6 +238,7 @@ export default function Admin() {
                       <th className="text-left px-4 py-3">Producto</th>
                       <th className="text-left px-4 py-3">Categoría</th>
                       <th className="text-right px-4 py-3">Precio</th>
+                      <th className="text-center px-4 py-3">Stock</th>
                       <th className="text-center px-4 py-3">Activo</th>
                       <th className="px-4 py-3" />
                     </tr>
@@ -242,6 +259,12 @@ export default function Admin() {
                             </td>
                             <td className="px-4 py-3 text-right font-semibold" style={{ color: 'var(--color-primary)' }}>
                               {p.price?.toFixed(2)} {RESTAURANT.currency}
+                            </td>
+                            <td className="px-4 py-3 text-center">
+                              {typeof p.stock === 'number'
+                                ? <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${p.stock === 0 ? 'bg-red-100 text-red-600' : p.stock <= 5 ? 'bg-orange-100 text-orange-600' : 'bg-green-100 text-green-700'}`}>{p.stock}</span>
+                                : <Infinity size={14} className="inline text-gray-300" />
+                              }
                             </td>
                             <td className="px-4 py-3 text-center">
                               <span className={`inline-block w-2 h-2 rounded-full ${p.active ? 'bg-green-400' : 'bg-gray-300'}`} />
@@ -390,13 +413,24 @@ export default function Admin() {
                 value={form.image}
                 onChange={val => setForm(f => ({ ...f, image: val }))}
               />
-              <Field label="Orden">
-                <input type="number" min="0" className="input" value={form.order} onChange={e => setForm(f => ({ ...f, order: parseInt(e.target.value) || 0 }))} />
-              </Field>
+              <div className="grid grid-cols-2 gap-4">
+                <Field label="Orden">
+                  <input type="number" min="0" className="input" value={form.order} onChange={e => setForm(f => ({ ...f, order: parseInt(e.target.value) || 0 }))} />
+                </Field>
+                <Field label="Stock (vacío = ilimitado)">
+                  <input type="number" min="0" className="input" value={form.stock} placeholder="∞" onChange={e => setForm(f => ({ ...f, stock: e.target.value === '' ? '' : parseInt(e.target.value) || 0 }))} />
+                </Field>
+              </div>
               <label className="flex items-center gap-2 cursor-pointer">
                 <input type="checkbox" checked={form.active} onChange={e => setForm(f => ({ ...f, active: e.target.checked }))} className="w-4 h-4" />
                 <span className="text-sm text-gray-700">Producto activo (visible en la carta)</span>
               </label>
+
+              {/* Modificadores */}
+              <ModifiersEditor
+                modifiers={form.modifiers ?? []}
+                onChange={mods => setForm(f => ({ ...f, modifiers: mods }))}
+              />
             </div>
 
             <div className="flex gap-3 p-5 border-t">
@@ -897,6 +931,108 @@ function AddOrderModal({ table, categories, allProducts, onClose }) {
             </button>
           </div>
         )}
+      </div>
+    </div>
+  )
+}
+
+// ── MODIFIERS EDITOR ─────────────────────────────────────────────────────────
+const EMPTY_MOD = { name: '', required: true, multiple: false, options: [] }
+
+function ModifiersEditor({ modifiers, onChange }) {
+  const [newOption, setNewOption] = useState({}) // groupIdx -> string
+
+  function addGroup() {
+    onChange([...modifiers, { ...EMPTY_MOD }])
+  }
+
+  function removeGroup(i) {
+    onChange(modifiers.filter((_, idx) => idx !== i))
+  }
+
+  function updateGroup(i, key, val) {
+    onChange(modifiers.map((g, idx) => idx === i ? { ...g, [key]: val } : g))
+  }
+
+  function addOption(i) {
+    const opt = (newOption[i] ?? '').trim()
+    if (!opt) return
+    const g = modifiers[i]
+    if (g.options.includes(opt)) return
+    updateGroup(i, 'options', [...g.options, opt])
+    setNewOption(prev => ({ ...prev, [i]: '' }))
+  }
+
+  function removeOption(i, opt) {
+    updateGroup(i, 'options', modifiers[i].options.filter(o => o !== opt))
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <label className="text-xs font-semibold text-gray-500">Modificadores</label>
+        <button type="button" onClick={addGroup}
+          className="text-xs flex items-center gap-1 px-2 py-1 rounded-lg text-white font-semibold"
+          style={{ backgroundColor: 'var(--color-primary)' }}>
+          <Plus size={12} /> Añadir grupo
+        </button>
+      </div>
+
+      {modifiers.length === 0 && (
+        <p className="text-xs text-gray-400 text-center py-3 border border-dashed border-gray-200 rounded-lg">
+          Sin modificadores. Ej: "Punto", "Extras", "Tamaño"
+        </p>
+      )}
+
+      <div className="space-y-3">
+        {modifiers.map((g, i) => (
+          <div key={i} className="border border-gray-200 rounded-xl p-3 space-y-2">
+            <div className="flex items-center gap-2">
+              <input
+                className="input flex-1 text-sm"
+                placeholder="Nombre del grupo (ej: Punto)"
+                value={g.name}
+                onChange={e => updateGroup(i, 'name', e.target.value)}
+              />
+              <button type="button" onClick={() => removeGroup(i)} className="text-gray-300 hover:text-red-400 flex-shrink-0">
+                <X size={16} />
+              </button>
+            </div>
+            <div className="flex gap-3 text-xs">
+              <label className="flex items-center gap-1.5 cursor-pointer text-gray-600">
+                <input type="checkbox" checked={g.required} onChange={e => updateGroup(i, 'required', e.target.checked)} className="w-3.5 h-3.5" />
+                Obligatorio
+              </label>
+              <label className="flex items-center gap-1.5 cursor-pointer text-gray-600">
+                <input type="checkbox" checked={g.multiple} onChange={e => updateGroup(i, 'multiple', e.target.checked)} className="w-3.5 h-3.5" />
+                Selección múltiple
+              </label>
+            </div>
+            {/* Options */}
+            <div className="flex flex-wrap gap-1.5">
+              {g.options.map(opt => (
+                <span key={opt} className="flex items-center gap-1 text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded-full">
+                  {opt}
+                  <button type="button" onClick={() => removeOption(i, opt)} className="text-gray-400 hover:text-red-400"><X size={10} /></button>
+                </span>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <input
+                className="input flex-1 text-xs"
+                placeholder="Nueva opción..."
+                value={newOption[i] ?? ''}
+                onChange={e => setNewOption(prev => ({ ...prev, [i]: e.target.value }))}
+                onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addOption(i))}
+              />
+              <button type="button" onClick={() => addOption(i)}
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white"
+                style={{ backgroundColor: 'var(--color-primary)' }}>
+                +
+              </button>
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   )

@@ -1,7 +1,7 @@
 import { db } from '../config/firebase'
 import {
   collection, doc, getDocs, addDoc, updateDoc, deleteDoc,
-  query, where,
+  query, where, increment,
 } from 'firebase/firestore'
 
 const COL = 'products'
@@ -30,4 +30,12 @@ export async function updateProduct(id, data) {
 
 export async function deleteProduct(id) {
   return deleteDoc(doc(db, COL, id))
+}
+
+export async function decrementStock(items) {
+  await Promise.all(
+    items
+      .filter(i => i.id)
+      .map(i => updateDoc(doc(db, COL, i.id), { stock: increment(-i.qty) }))
+  )
 }

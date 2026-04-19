@@ -5,6 +5,7 @@ import { ProtectedRoute } from './components/admin/ProtectedRoute'
 import Menu from './pages/Menu'
 import Admin from './pages/Admin'
 import AdminLogin from './pages/AdminLogin'
+import Cocina from './pages/Cocina'
 import { RESTAURANT } from './config/restaurant'
 
 function ApplyTheme() {
@@ -31,6 +32,9 @@ export default function App() {
           {/* Admin */}
           <Route path="/admin/login" element={<AdminLogin />} />
           <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
+
+          {/* Cocina */}
+          <Route path="/cocina" element={<Cocina />} />
 
           {/* Fallback */}
           <Route path="*" element={<Navigate to="/" replace />} />
