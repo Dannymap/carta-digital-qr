@@ -3,8 +3,6 @@ import { getFirestore } from 'firebase/firestore'
 import { getAuth } from 'firebase/auth'
 import { getStorage } from 'firebase/storage'
 
-// ── CONFIGURACIÓN FIREBASE ─────────────────────────────────────────────────
-// Reemplaza estos valores con los de tu proyecto Firebase
 const firebaseConfig = {
   apiKey: 'AIzaSyCWoAJnUVRVB9Lhej7gqrQbKxPDiYjhdp8',
   authDomain: 'restaurantsqr-eac86.firebaseapp.com',
@@ -16,7 +14,10 @@ const firebaseConfig = {
 }
 
 const app = initializeApp(firebaseConfig)
+// App secundaria para crear usuarios sin cerrar sesión del admin actual
+const secondaryApp = initializeApp(firebaseConfig, 'secondary')
 
 export const db = getFirestore(app)
 export const auth = getAuth(app)
 export const storage = getStorage(app)
+export const secondaryAuth = getAuth(secondaryApp)

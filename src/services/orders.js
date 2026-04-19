@@ -47,6 +47,18 @@ export function subscribeToAllOrders(callback) {
   })
 }
 
+// Todos los pedidos de una mesa sin filtro de sesión (para historial)
+export function subscribeToTableAllOrders(tableId, callback) {
+  const q = query(collection(db, COL), where('table', '==', tableId))
+  return onSnapshot(q, snap => {
+    callback(
+      snap.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0))
+    )
+  })
+}
+
 export function subscribeToPendingOrders(callback) {
   const q = query(collection(db, COL), where('status', 'in', ['pending', 'preparing']))
   return onSnapshot(q, snap => {

@@ -31,7 +31,7 @@ export default function App() {
 
           {/* Admin */}
           <Route path="/admin/login" element={<AdminLogin />} />
-          <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
+          <Route path="/admin" element={<ProtectedRoute>{role => <Admin role={role} />}</ProtectedRoute>} />
 
           {/* Cocina */}
           <Route path="/cocina" element={<Cocina />} />

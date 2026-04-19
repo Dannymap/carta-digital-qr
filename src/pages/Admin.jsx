@@ -1,31 +1,40 @@
 import { useState, useEffect, useRef } from 'react'
-import { LogOut, Plus, Pencil, Trash2, Package, QrCode, ClipboardList, X, Check, Upload, Link, LayoutGrid, UtensilsCrossed, Banknote, CreditCard, ChefHat, Clock, CheckCircle, LayoutDashboard, ExternalLink, Infinity } from 'lucide-react'
+import { LogOut, Plus, Pencil, Trash2, Package, QrCode, ClipboardList, X, Check, Upload, Link, LayoutGrid, UtensilsCrossed, Banknote, CreditCard, ChefHat, Clock, CheckCircle, LayoutDashboard, ExternalLink, Infinity, Tag, Users2, History, Shield } from 'lucide-react'
 import { Dashboard } from '../components/admin/Dashboard'
 import { uploadImage } from '../services/storage'
 import { auth } from '../config/firebase'
 import { signOut } from 'firebase/auth'
 import { useNavigate } from 'react-router-dom'
 import { getAllProducts, addProduct, updateProduct, deleteProduct } from '../services/products'
-import { subscribeToPendingOrders, updateOrderStatus, subscribeToTableOrders, createOrderByAdmin } from '../services/orders'
+import { subscribeToPendingOrders, updateOrderStatus, subscribeToTableOrders, subscribeToTableAllOrders, createOrderByAdmin } from '../services/orders'
 import { subscribeToCategories, addCategory, updateCategory, deleteCategory } from '../services/categories'
 import { subscribeToTables, openTable, closeTable, createTable, deleteTable } from '../services/tables'
+import { subscribeToStaff, createStaffMember, updateStaffMember, deleteStaffMember } from '../services/staff'
+import { subscribeToDiscounts, addDiscount, updateDiscount, deleteDiscount } from '../services/discounts'
 import { RESTAURANT } from '../config/restaurant'
 import { QRCodeSVG } from 'qrcode.react'
 
 const TABS = [
-  { id: 'dashboard',  label: 'Dashboard',   icon: LayoutDashboard },
-  { id: 'tables',     label: 'Mesas',       icon: UtensilsCrossed },
-  { id: 'products',   label: 'Productos',   icon: Package },
-  { id: 'categories', label: 'Categorías',  icon: LayoutGrid },
-  { id: 'orders',     label: 'Pedidos',     icon: ClipboardList },
-  { id: 'qr',         label: 'QR Mesas',   icon: QrCode },
+  { id: 'dashboard',  label: 'Dashboard',   icon: LayoutDashboard, roles: ['admin'] },
+  { id: 'tables',     label: 'Mesas',       icon: UtensilsCrossed, roles: ['admin','camarero'] },
+  { id: 'products',   label: 'Productos',   icon: Package,         roles: ['admin'] },
+  { id: 'categories', label: 'Categorías',  icon: LayoutGrid,      roles: ['admin'] },
+  { id: 'orders',     label: 'Pedidos',     icon: ClipboardList,   roles: ['admin','camarero'] },
+  { id: 'discounts',  label: 'Descuentos',  icon: Tag,             roles: ['admin'] },
+  { id: 'staff',      label: 'Empleados',   icon: Users2,          roles: ['admin'] },
+  { id: 'qr',         label: 'QR Mesas',   icon: QrCode,          roles: ['admin'] },
 ]
 
 const EMPTY_FORM = { name: '', description: '', price: '', category: '', image: '', active: true, order: 0, stock: '', modifiers: [] }
 
-export default function Admin() {
+export default function Admin({ role = 'admin' }) {
   const navigate = useNavigate()
-  const [tab, setTab] = useState('dashboard')
+  const defaultTab = role === 'camarero' ? 'tables' : 'dashboard'
+  const [tab, setTab] = useState(defaultTab)
+
+  // Staff & Discounts
+  const [staff, setStaff] = useState([])
+  const [discounts, setDiscounts] = useState([])
 
   // Products
   const [products, setProducts] = useState([])
@@ -51,9 +60,11 @@ export default function Admin() {
 
   useEffect(() => {
     loadProducts()
-    const unsubCats   = subscribeToCategories(setCategories)
-    const unsubTables = subscribeToTables(setTables)
-    return () => { unsubCats(); unsubTables() }
+    const unsubCats      = subscribeToCategories(setCategories)
+    const unsubTables    = subscribeToTables(setTables)
+    const unsubStaff     = subscribeToStaff(setStaff)
+    const unsubDiscounts = subscribeToDiscounts(setDiscounts)
+    return () => { unsubCats(); unsubTables(); unsubStaff(); unsubDiscounts() }
   }, [])
 
   useEffect(() => {
@@ -167,15 +178,15 @@ export default function Admin() {
       </header>
 
       {/* Tabs */}
-      <div className="bg-white border-b">
-        <div className="max-w-5xl mx-auto px-4 flex gap-1">
-          {TABS.map(t => {
+      <div className="bg-white border-b overflow-x-auto">
+        <div className="max-w-5xl mx-auto px-4 flex gap-1 min-w-max">
+          {TABS.filter(t => t.roles.includes(role)).map(t => {
             const Icon = t.icon
             return (
               <button
                 key={t.id}
                 onClick={() => setTab(t.id)}
-                className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+                className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
                   tab === t.id ? 'border-[var(--color-primary)] text-[var(--color-primary)]' : 'border-transparent text-gray-500 hover:text-gray-700'
                 }`}
               >
@@ -375,8 +386,21 @@ export default function Admin() {
         )}
 
         {/* QR TAB */}
-        {tab === 'qr' && (
-          <QRTab categories={categories} />
+        {tab === 'qr' && <QRTab categories={categories} />}
+
+        {/* STAFF TAB */}
+        {tab === 'staff' && (
+          <StaffTab staff={staff} />
+        )}
+
+        {/* DISCOUNTS TAB */}
+        {tab === 'discounts' && (
+          <DiscountsTab
+            discounts={discounts}
+            onAdd={addDiscount}
+            onUpdate={updateDiscount}
+            onDelete={deleteDiscount}
+          />
         )}
       </main>
 
@@ -629,6 +653,8 @@ function TablesTab({ tables, categories, allProducts, onOpen, onClose }) {
   const [showAddOrder, setShowAddOrder] = useState(false)
   const [creating, setCreating] = useState(false)
   const [expandedOrders, setExpandedOrders] = useState({})
+  const [showHistory, setShowHistory] = useState(false)
+  const [historyOrders, setHistoryOrders] = useState([])
 
   useEffect(() => {
     if (!selectedTable) return
@@ -636,6 +662,12 @@ function TablesTab({ tables, categories, allProducts, onOpen, onClose }) {
     const unsub = subscribeToTableOrders(selectedTable, setTableOrders, since)
     return unsub
   }, [selectedTable, tables])
+
+  useEffect(() => {
+    if (!selectedTable || !showHistory) return
+    const unsub = subscribeToTableAllOrders(selectedTable, setHistoryOrders)
+    return unsub
+  }, [selectedTable, showHistory])
 
   const selectedTableData = selectedTable ? tables[selectedTable] : null
   const tableTotal = tableOrders.reduce((s, o) => s + (o.total ?? 0), 0)
@@ -820,8 +852,60 @@ function TablesTab({ tables, categories, allProducts, onOpen, onClose }) {
 
             {tableOrders.length > 0 && (
               <div className="mt-3 flex justify-between font-bold text-sm pt-3 border-t">
-                <span>Total del día · Mesa {selectedTable}</span>
+                <span>Total sesión · Mesa {selectedTable}</span>
                 <span style={{ color: 'var(--color-primary)' }}>{tableTotal.toFixed(2)} {RESTAURANT.currency}</span>
+              </div>
+            )}
+
+            {/* Historial completo */}
+            <button
+              onClick={() => setShowHistory(h => !h)}
+              className="mt-3 w-full flex items-center justify-center gap-2 py-2 rounded-lg border border-gray-200 text-xs text-gray-500 hover:bg-gray-50 transition-colors"
+            >
+              <History size={13} />
+              {showHistory ? 'Ocultar historial completo' : 'Ver historial completo'}
+            </button>
+
+            {showHistory && (
+              <div className="mt-3 space-y-2">
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Historial · Todos los pedidos</p>
+                {historyOrders.length === 0 ? (
+                  <p className="text-xs text-center text-gray-400 py-4">Sin pedidos registrados</p>
+                ) : (
+                  (() => {
+                    // Agrupar por día
+                    const byDay = {}
+                    historyOrders.forEach(o => {
+                      const day = new Date(o.createdAt).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' })
+                      if (!byDay[day]) byDay[day] = []
+                      byDay[day].push(o)
+                    })
+                    return Object.entries(byDay).map(([day, dayOrders]) => {
+                      const dayTotal = dayOrders.reduce((s, o) => s + (o.total ?? 0), 0)
+                      return (
+                        <div key={day}>
+                          <div className="flex justify-between items-center py-1.5 border-b border-gray-100">
+                            <span className="text-xs font-semibold text-gray-600">{day}</span>
+                            <span className="text-xs font-bold" style={{ color: 'var(--color-primary)' }}>{dayTotal.toFixed(2)} {RESTAURANT.currency}</span>
+                          </div>
+                          {dayOrders.map(o => {
+                            const statusColor = { pending: 'text-yellow-500', preparing: 'text-blue-500', delivered: 'text-green-500' }[o.status] ?? 'text-gray-400'
+                            return (
+                              <div key={o.id} className="pl-2 py-1 border-l-2 border-gray-100 ml-1">
+                                <div className="flex justify-between text-xs">
+                                  <span className="text-gray-500">{new Date(o.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                  <span className={`font-medium ${statusColor}`}>{o.status}</span>
+                                  <span className="font-semibold text-gray-700">{o.total?.toFixed(2)} {RESTAURANT.currency}</span>
+                                </div>
+                                <p className="text-[10px] text-gray-400 truncate">{o.items?.map(i => `${i.qty}× ${i.name}`).join(', ')}</p>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )
+                    })
+                  })()
+                )}
               </div>
             )}
           </>
@@ -1140,6 +1224,268 @@ function CategoriesTab({ categories, onAdd, onUpdate, onDelete }) {
             <div className="flex gap-3 p-5 border-t">
               <button onClick={() => setShowForm(false)} className="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-600 text-sm hover:bg-gray-50">Cancelar</button>
               <button onClick={handleSave} disabled={saving || !form.label.trim()}
+                className="flex-1 py-2.5 rounded-xl text-white text-sm font-bold disabled:opacity-50"
+                style={{ backgroundColor: 'var(--color-primary)' }}>
+                {saving ? 'Guardando...' : 'Guardar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
+
+// ── STAFF TAB ─────────────────────────────────────────────────────────────────
+const ROLES = ['admin', 'camarero', 'cocinero']
+const ROLE_COLORS = { admin: 'bg-purple-100 text-purple-700', camarero: 'bg-blue-100 text-blue-700', cocinero: 'bg-orange-100 text-orange-700' }
+
+function StaffTab({ staff }) {
+  const [showForm, setShowForm] = useState(false)
+  const [form, setForm] = useState({ name: '', email: '', password: '', role: 'camarero' })
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  async function handleCreate() {
+    if (!form.name || !form.email || !form.password) return
+    setSaving(true); setError('')
+    try {
+      await createStaffMember(form.email, form.password, form.name, form.role)
+      setShowForm(false)
+      setForm({ name: '', email: '', password: '', role: 'camarero' })
+    } catch (e) {
+      setError(e.message ?? 'Error al crear empleado')
+    } finally { setSaving(false) }
+  }
+
+  async function handleRoleChange(id, role) {
+    await updateStaffMember(id, { role })
+  }
+
+  async function handleDelete(id, name) {
+    if (!confirm(`¿Eliminar acceso de ${name}? No podrá entrar al panel.`)) return
+    await deleteStaffMember(id)
+  }
+
+  return (
+    <>
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-lg font-bold text-gray-800">Empleados ({staff.length})</h2>
+        <button onClick={() => setShowForm(true)}
+          className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-white text-sm font-semibold"
+          style={{ backgroundColor: 'var(--color-primary)' }}>
+          <Plus size={16} /> Nuevo empleado
+        </button>
+      </div>
+
+      <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50 text-gray-500 text-xs uppercase">
+            <tr>
+              <th className="text-left px-4 py-3">Nombre</th>
+              <th className="text-left px-4 py-3">Email</th>
+              <th className="text-left px-4 py-3">Rol</th>
+              <th className="px-4 py-3" />
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-50">
+            {staff.map(s => (
+              <tr key={s.id} className="hover:bg-gray-50">
+                <td className="px-4 py-3 font-medium text-gray-900">{s.name}</td>
+                <td className="px-4 py-3 text-gray-500">{s.email}</td>
+                <td className="px-4 py-3">
+                  <select
+                    value={s.role}
+                    onChange={e => handleRoleChange(s.id, e.target.value)}
+                    className={`text-xs font-semibold px-2 py-1 rounded-full border-0 cursor-pointer ${ROLE_COLORS[s.role] ?? 'bg-gray-100 text-gray-600'}`}
+                  >
+                    {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
+                  </select>
+                </td>
+                <td className="px-4 py-3 text-right">
+                  <button onClick={() => handleDelete(s.id, s.name)} className="text-gray-400 hover:text-red-500"><Trash2 size={15} /></button>
+                </td>
+              </tr>
+            ))}
+            {staff.length === 0 && (
+              <tr><td colSpan={4} className="text-center py-10 text-gray-400">
+                <Shield size={32} strokeWidth={1} className="mx-auto mb-2" />
+                Sin empleados registrados
+              </td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="mt-4 p-4 bg-blue-50 rounded-xl border border-blue-100 text-sm text-blue-700 space-y-1">
+        <p className="font-semibold">Roles disponibles:</p>
+        <p>• <strong>admin</strong> — Acceso total al panel</p>
+        <p>• <strong>camarero</strong> — Solo Mesas y Pedidos</p>
+        <p>• <strong>cocinero</strong> — Redirige automáticamente a la pantalla de cocina</p>
+      </div>
+
+      {showForm && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm">
+            <div className="flex items-center justify-between p-5 border-b">
+              <h3 className="font-bold text-gray-900">Nuevo empleado</h3>
+              <button onClick={() => setShowForm(false)} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
+            </div>
+            <div className="p-5 space-y-4">
+              <Field label="Nombre *">
+                <input className="input" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Nombre completo" autoFocus />
+              </Field>
+              <Field label="Email *">
+                <input type="email" className="input" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} placeholder="empleado@restaurante.com" />
+              </Field>
+              <Field label="Contraseña temporal *">
+                <input type="password" className="input" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} placeholder="Mínimo 6 caracteres" />
+              </Field>
+              <Field label="Rol">
+                <select className="input" value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value }))}>
+                  {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
+                </select>
+              </Field>
+              {error && <p className="text-sm text-red-500">{error}</p>}
+            </div>
+            <div className="flex gap-3 p-5 border-t">
+              <button onClick={() => setShowForm(false)} className="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-600 text-sm hover:bg-gray-50">Cancelar</button>
+              <button onClick={handleCreate} disabled={saving || !form.name || !form.email || !form.password}
+                className="flex-1 py-2.5 rounded-xl text-white text-sm font-bold disabled:opacity-50"
+                style={{ backgroundColor: 'var(--color-primary)' }}>
+                {saving ? 'Creando...' : 'Crear acceso'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
+
+// ── DISCOUNTS TAB ─────────────────────────────────────────────────────────────
+const EMPTY_DISC = { code: '', type: 'percent', value: '', active: true, maxUses: '' }
+
+function DiscountsTab({ discounts, onAdd, onUpdate, onDelete }) {
+  const [showForm, setShowForm] = useState(false)
+  const [editing, setEditing] = useState(null)
+  const [form, setForm] = useState(EMPTY_DISC)
+  const [saving, setSaving] = useState(false)
+
+  function openCreate() { setEditing(null); setForm(EMPTY_DISC); setShowForm(true) }
+  function openEdit(d) { setEditing(d.id); setForm({ code: d.code, type: d.type, value: d.value?.toString(), active: d.active, maxUses: d.maxUses?.toString() ?? '' }); setShowForm(true) }
+
+  async function handleSave() {
+    if (!form.code || !form.value) return
+    setSaving(true)
+    const data = { ...form, value: parseFloat(form.value), maxUses: form.maxUses ? parseInt(form.maxUses) : null }
+    try {
+      editing ? await onUpdate(editing, data) : await onAdd(data)
+      setShowForm(false)
+    } finally { setSaving(false) }
+  }
+
+  async function handleDelete(d) {
+    if (!confirm(`¿Eliminar el descuento "${d.code}"?`)) return
+    await onDelete(d.id)
+  }
+
+  return (
+    <>
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-lg font-bold text-gray-800">Descuentos ({discounts.length})</h2>
+        <button onClick={openCreate}
+          className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-white text-sm font-semibold"
+          style={{ backgroundColor: 'var(--color-primary)' }}>
+          <Plus size={16} /> Nuevo descuento
+        </button>
+      </div>
+
+      <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50 text-gray-500 text-xs uppercase">
+            <tr>
+              <th className="text-left px-4 py-3">Código</th>
+              <th className="text-left px-4 py-3">Tipo</th>
+              <th className="text-right px-4 py-3">Valor</th>
+              <th className="text-center px-4 py-3">Usos</th>
+              <th className="text-center px-4 py-3">Activo</th>
+              <th className="px-4 py-3" />
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-50">
+            {discounts.map(d => (
+              <tr key={d.id} className="hover:bg-gray-50">
+                <td className="px-4 py-3">
+                  <span className="font-mono font-bold text-gray-800 bg-gray-100 px-2 py-0.5 rounded">{d.code}</span>
+                </td>
+                <td className="px-4 py-3 text-gray-500">{d.type === 'percent' ? 'Porcentaje' : 'Importe fijo'}</td>
+                <td className="px-4 py-3 text-right font-semibold" style={{ color: 'var(--color-primary)' }}>
+                  {d.type === 'percent' ? `${d.value}%` : `${d.value} ${RESTAURANT.currency}`}
+                </td>
+                <td className="px-4 py-3 text-center text-gray-500">
+                  {d.usedCount ?? 0}{d.maxUses ? `/${d.maxUses}` : ''}
+                </td>
+                <td className="px-4 py-3 text-center">
+                  <button onClick={() => onUpdate(d.id, { active: !d.active })}>
+                    <span className={`inline-block w-2 h-2 rounded-full ${d.active ? 'bg-green-400' : 'bg-gray-300'}`} />
+                  </button>
+                </td>
+                <td className="px-4 py-3">
+                  <div className="flex gap-2 justify-end">
+                    <button onClick={() => openEdit(d)} className="text-gray-400 hover:text-blue-500"><Pencil size={15} /></button>
+                    <button onClick={() => handleDelete(d)} className="text-gray-400 hover:text-red-500"><Trash2 size={15} /></button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+            {discounts.length === 0 && (
+              <tr><td colSpan={6} className="text-center py-10 text-gray-400">
+                <Tag size={32} strokeWidth={1} className="mx-auto mb-2" />
+                Sin descuentos. Crea el primero.
+              </td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {showForm && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm">
+            <div className="flex items-center justify-between p-5 border-b">
+              <h3 className="font-bold text-gray-900">{editing ? 'Editar descuento' : 'Nuevo descuento'}</h3>
+              <button onClick={() => setShowForm(false)} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
+            </div>
+            <div className="p-5 space-y-4">
+              <Field label="Código *">
+                <input className="input uppercase" value={form.code}
+                  onChange={e => setForm(f => ({ ...f, code: e.target.value.toUpperCase() }))}
+                  placeholder="Ej: VERANO10" autoFocus />
+              </Field>
+              <div className="grid grid-cols-2 gap-4">
+                <Field label="Tipo">
+                  <select className="input" value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value }))}>
+                    <option value="percent">Porcentaje (%)</option>
+                    <option value="fixed">Importe fijo</option>
+                  </select>
+                </Field>
+                <Field label={form.type === 'percent' ? 'Valor (%) *' : `Valor (${RESTAURANT.currency}) *`}>
+                  <input type="number" min="0" step="0.01" className="input" value={form.value}
+                    onChange={e => setForm(f => ({ ...f, value: e.target.value }))} placeholder="0" />
+                </Field>
+              </div>
+              <Field label="Usos máximos (vacío = ilimitado)">
+                <input type="number" min="1" className="input" value={form.maxUses}
+                  onChange={e => setForm(f => ({ ...f, maxUses: e.target.value }))} placeholder="∞" />
+              </Field>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={form.active} onChange={e => setForm(f => ({ ...f, active: e.target.checked }))} className="w-4 h-4" />
+                <span className="text-sm text-gray-700">Descuento activo</span>
+              </label>
+            </div>
+            <div className="flex gap-3 p-5 border-t">
+              <button onClick={() => setShowForm(false)} className="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-600 text-sm hover:bg-gray-50">Cancelar</button>
+              <button onClick={handleSave} disabled={saving || !form.code || !form.value}
                 className="flex-1 py-2.5 rounded-xl text-white text-sm font-bold disabled:opacity-50"
                 style={{ backgroundColor: 'var(--color-primary)' }}>
                 {saving ? 'Guardando...' : 'Guardar'}
