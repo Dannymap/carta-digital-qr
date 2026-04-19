@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { LogOut, Plus, Pencil, Trash2, Package, QrCode, ClipboardList, X, Check, Upload, Link, LayoutGrid, UtensilsCrossed, Banknote, CreditCard, ChefHat, Clock, CheckCircle, LayoutDashboard, ExternalLink, Infinity, Tag, Users2, History, Shield } from 'lucide-react'
+import { LogOut, Plus, Pencil, Trash2, Package, QrCode, ClipboardList, X, Check, Upload, Link, LayoutGrid, UtensilsCrossed, Banknote, CreditCard, ChefHat, Clock, CheckCircle, LayoutDashboard, ExternalLink, Infinity, Tag, Users2, History, Shield, Star, Settings } from 'lucide-react'
 import { Dashboard } from '../components/admin/Dashboard'
 import { uploadImage } from '../services/storage'
 import { auth } from '../config/firebase'
@@ -11,6 +11,9 @@ import { subscribeToCategories, addCategory, updateCategory, deleteCategory } fr
 import { subscribeToTables, openTable, closeTable, createTable, deleteTable } from '../services/tables'
 import { subscribeToStaff, createStaffMember, updateStaffMember, deleteStaffMember } from '../services/staff'
 import { subscribeToDiscounts, addDiscount, updateDiscount, deleteDiscount } from '../services/discounts'
+import { subscribeToLoyalty, updateLoyaltyMember, LOYALTY_CONFIG } from '../services/loyalty'
+import { subscribeToConfig, saveConfig } from '../services/restaurantConfig'
+import { TicketPrint } from '../components/common/TicketPrint'
 import { RESTAURANT } from '../config/restaurant'
 import { QRCodeSVG } from 'qrcode.react'
 
@@ -23,6 +26,8 @@ const TABS = [
   { id: 'discounts',  label: 'Descuentos',  icon: Tag,             roles: ['admin'] },
   { id: 'staff',      label: 'Empleados',   icon: Users2,          roles: ['admin'] },
   { id: 'qr',         label: 'QR Mesas',   icon: QrCode,          roles: ['admin'] },
+  { id: 'loyalty',  label: 'Fidelización', icon: Star,    roles: ['admin'] },
+  { id: 'config',   label: 'Configuración', icon: Settings, roles: ['admin'] },
 ]
 
 const EMPTY_FORM = { name: '', description: '', price: '', category: '', image: '', active: true, order: 0, stock: '', modifiers: [] }
@@ -35,6 +40,8 @@ export default function Admin({ role = 'admin' }) {
   // Staff & Discounts
   const [staff, setStaff] = useState([])
   const [discounts, setDiscounts] = useState([])
+  const [loyaltyMembers, setLoyaltyMembers] = useState([])
+  const [restaurantConfig, setRestaurantConfig] = useState(null)
 
   // Products
   const [products, setProducts] = useState([])
@@ -64,7 +71,9 @@ export default function Admin({ role = 'admin' }) {
     const unsubTables    = subscribeToTables(setTables)
     const unsubStaff     = subscribeToStaff(setStaff)
     const unsubDiscounts = subscribeToDiscounts(setDiscounts)
-    return () => { unsubCats(); unsubTables(); unsubStaff(); unsubDiscounts() }
+    const unsubLoyalty = subscribeToLoyalty(setLoyaltyMembers)
+    const unsubConfig  = subscribeToConfig(setRestaurantConfig)
+    return () => { unsubCats(); unsubTables(); unsubStaff(); unsubDiscounts(); unsubLoyalty(); unsubConfig() }
   }, [])
 
   useEffect(() => {
@@ -402,6 +411,9 @@ export default function Admin({ role = 'admin' }) {
             onDelete={deleteDiscount}
           />
         )}
+
+        {tab === 'loyalty' && <LoyaltyTab members={loyaltyMembers} />}
+        {tab === 'config' && <ConfigTab config={restaurantConfig} onSave={saveConfig} />}
       </main>
 
       {/* Product Form Modal */}
@@ -855,6 +867,15 @@ function TablesTab({ tables, categories, allProducts, onOpen, onClose }) {
                 <span>Total sesión · Mesa {selectedTable}</span>
                 <span style={{ color: 'var(--color-primary)' }}>{tableTotal.toFixed(2)} {RESTAURANT.currency}</span>
               </div>
+            )}
+
+            {selectedTableData?.status === 'bill_requested' && (
+              <TicketPrint
+                table={selectedTable}
+                orders={tableOrders}
+                tableData={selectedTableData}
+                config={tables.__config}
+              />
             )}
 
             {/* Historial completo */}
@@ -1495,6 +1516,187 @@ function DiscountsTab({ discounts, onAdd, onUpdate, onDelete }) {
         </div>
       )}
     </>
+  )
+}
+
+// ── LOYALTY TAB ───────────────────────────────────────────────────────────────
+function LoyaltyTab({ members }) {
+  const sorted = [...members].sort((a, b) => (b.points ?? 0) - (a.points ?? 0))
+  const totalPoints = members.reduce((s, m) => s + (m.points ?? 0), 0)
+  const totalSpent = members.reduce((s, m) => s + (m.totalSpent ?? 0), 0)
+
+  return (
+    <>
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-lg font-bold text-gray-800">Fidelización ({members.length} miembros)</h2>
+      </div>
+
+      <div className="grid grid-cols-3 gap-4 mb-6">
+        <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
+          <p className="text-2xl font-bold text-gray-900">{members.length}</p>
+          <p className="text-xs text-gray-500 mt-0.5">Miembros totales</p>
+        </div>
+        <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
+          <p className="text-2xl font-bold text-gray-900">{totalPoints}</p>
+          <p className="text-xs text-gray-500 mt-0.5">Puntos en circulación</p>
+        </div>
+        <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
+          <p className="text-2xl font-bold text-gray-900">{totalSpent.toFixed(0)} {RESTAURANT.currency}</p>
+          <p className="text-xs text-gray-500 mt-0.5">Gasto total acumulado</p>
+        </div>
+      </div>
+
+      <div className="bg-yellow-50 border border-yellow-100 rounded-xl p-3 mb-4 text-xs text-yellow-700">
+        <strong>{LOYALTY_CONFIG.POINTS_PER_EURO} punto</strong> por cada {RESTAURANT.currency} gastado · <strong>{LOYALTY_CONFIG.POINTS_FOR_EURO} puntos</strong> = 1 {RESTAURANT.currency} de descuento
+      </div>
+
+      <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50 text-gray-500 text-xs uppercase">
+            <tr>
+              <th className="text-left px-4 py-3">Miembro</th>
+              <th className="text-left px-4 py-3">Teléfono</th>
+              <th className="text-right px-4 py-3">Puntos</th>
+              <th className="text-right px-4 py-3">Gastado</th>
+              <th className="text-right px-4 py-3">Última visita</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-50">
+            {sorted.map(m => (
+              <tr key={m.id} className="hover:bg-gray-50">
+                <td className="px-4 py-3 font-medium text-gray-900">{m.name || '—'}</td>
+                <td className="px-4 py-3 text-gray-500 font-mono text-xs">{m.phone}</td>
+                <td className="px-4 py-3 text-right">
+                  <span className="font-bold text-yellow-600 bg-yellow-50 px-2 py-0.5 rounded-full">{m.points ?? 0} pts</span>
+                </td>
+                <td className="px-4 py-3 text-right font-semibold" style={{ color: 'var(--color-primary)' }}>
+                  {(m.totalSpent ?? 0).toFixed(2)} {RESTAURANT.currency}
+                </td>
+                <td className="px-4 py-3 text-right text-xs text-gray-400">
+                  {m.lastActivity ? new Date(m.lastActivity).toLocaleDateString('es-ES') : '—'}
+                </td>
+              </tr>
+            ))}
+            {members.length === 0 && (
+              <tr><td colSpan={5} className="text-center py-10 text-gray-400">
+                <Star size={32} strokeWidth={1} className="mx-auto mb-2" />
+                Sin miembros aún. Los clientes se registran al pedir con su teléfono.
+              </td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </>
+  )
+}
+
+// ── CONFIG TAB ────────────────────────────────────────────────────────────────
+function ConfigTab({ config, onSave }) {
+  const [form, setForm] = useState(null)
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+
+  useEffect(() => {
+    if (config && !form) setForm({
+      name: config.name ?? '',
+      tagline: config.tagline ?? '',
+      logoIcon: config.logoIcon ?? '🍽️',
+      phone: config.phone ?? '',
+      address: config.address ?? '',
+      currency: config.currency ?? '€',
+      vatNote: config.vatNote ?? '',
+      allergenNote: config.allergenNote ?? '',
+      colorPrimary: config.colors?.primary ?? '#e63946',
+      colorSecondary: config.colors?.secondary ?? '#1d3557',
+    })
+  }, [config])
+
+  async function handleSave() {
+    if (!form) return
+    setSaving(true)
+    try {
+      await onSave({
+        name: form.name, tagline: form.tagline, logoIcon: form.logoIcon,
+        phone: form.phone, address: form.address, currency: form.currency,
+        vatNote: form.vatNote, allergenNote: form.allergenNote,
+        colors: { primary: form.colorPrimary, secondary: form.colorSecondary, primaryText: '#ffffff' },
+      })
+      // Apply colors immediately
+      document.documentElement.style.setProperty('--color-primary', form.colorPrimary)
+      document.documentElement.style.setProperty('--color-secondary', form.colorSecondary)
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+    } finally { setSaving(false) }
+  }
+
+  if (!form) return <div className="text-center py-10 text-gray-400">Cargando configuración...</div>
+
+  return (
+    <div className="max-w-2xl space-y-6">
+      <h2 className="text-lg font-bold text-gray-800">Configuración del restaurante</h2>
+
+      <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 space-y-4">
+        <h3 className="font-semibold text-gray-700">Información general</h3>
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Nombre del restaurante">
+            <input className="input" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
+          </Field>
+          <Field label="Icono / Emoji">
+            <input className="input" value={form.logoIcon} onChange={e => setForm(f => ({ ...f, logoIcon: e.target.value }))} />
+          </Field>
+        </div>
+        <Field label="Eslogan">
+          <input className="input" value={form.tagline} onChange={e => setForm(f => ({ ...f, tagline: e.target.value }))} />
+        </Field>
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Teléfono">
+            <input className="input" value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} />
+          </Field>
+          <Field label="Moneda">
+            <input className="input" value={form.currency} onChange={e => setForm(f => ({ ...f, currency: e.target.value }))} placeholder="€" />
+          </Field>
+        </div>
+        <Field label="Dirección">
+          <input className="input" value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} />
+        </Field>
+      </div>
+
+      <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 space-y-4">
+        <h3 className="font-semibold text-gray-700">Colores</h3>
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Color principal">
+            <div className="flex gap-2 items-center">
+              <input type="color" value={form.colorPrimary} onChange={e => setForm(f => ({ ...f, colorPrimary: e.target.value }))} className="w-10 h-10 rounded-lg border border-gray-200 cursor-pointer p-0.5" />
+              <input className="input flex-1" value={form.colorPrimary} onChange={e => setForm(f => ({ ...f, colorPrimary: e.target.value }))} />
+            </div>
+          </Field>
+          <Field label="Color secundario">
+            <div className="flex gap-2 items-center">
+              <input type="color" value={form.colorSecondary} onChange={e => setForm(f => ({ ...f, colorSecondary: e.target.value }))} className="w-10 h-10 rounded-lg border border-gray-200 cursor-pointer p-0.5" />
+              <input className="input flex-1" value={form.colorSecondary} onChange={e => setForm(f => ({ ...f, colorSecondary: e.target.value }))} />
+            </div>
+          </Field>
+        </div>
+        <div className="flex gap-3 mt-2">
+          <div className="flex-1 h-10 rounded-lg flex items-center justify-center text-white text-sm font-bold" style={{ backgroundColor: form.colorPrimary }}>Principal</div>
+          <div className="flex-1 h-10 rounded-lg flex items-center justify-center text-white text-sm font-bold" style={{ backgroundColor: form.colorSecondary }}>Secundario</div>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 space-y-4">
+        <h3 className="font-semibold text-gray-700">Notas legales</h3>
+        <Field label="Nota de IVA">
+          <input className="input" value={form.vatNote} onChange={e => setForm(f => ({ ...f, vatNote: e.target.value }))} />
+        </Field>
+        <Field label="Nota de alérgenos">
+          <input className="input" value={form.allergenNote} onChange={e => setForm(f => ({ ...f, allergenNote: e.target.value }))} />
+        </Field>
+      </div>
+
+      <button onClick={handleSave} disabled={saving} className="px-6 py-3 rounded-xl text-white font-bold text-sm disabled:opacity-50" style={{ backgroundColor: 'var(--color-primary)' }}>
+        {saving ? 'Guardando...' : saved ? '✓ Guardado' : 'Guardar configuración'}
+      </button>
+    </div>
   )
 }
 
